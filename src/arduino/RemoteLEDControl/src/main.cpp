@@ -1,16 +1,7 @@
-/*
- UDPSendReceiveString:
- This sketch receives UDP message strings, prints them to the serial port
- and sends an "acknowledge" string back to the sender
- A Processing sketch is included at the end of file that can be used to send
- and received messages for testing with a computer.
- created 21 Aug 2010
- by Michael Margolis
- This code is in the public domain.
- */
-
 // NETWORK
-#define NET_ID 69
+#define NET_ID 69 // Network id
+unsigned int localPort = 8888; // local port to listen on
+byte mac[] = {(byte)NET_ID, 0xAD, 0xBE, 0xEF, 0xFE, 0xED}; // Mac address
 
 #include <NativeEthernet.h>
 #include <NativeEthernetUdp.h>
@@ -18,9 +9,8 @@
 
 // LED constants
 #define NUM_DATA_OUT 5
-#define NUM_LEDS_PER_DATA_OUT 150
+#define NUM_LEDS_PER_DATA_OUT 180
 #define NUM_LEDS_TOTAL NUM_LEDS_PER_DATA_OUT *NUM_DATA_OUT
-#define NUM_LEDS_MAX_PER_DATA_OUT 480
 #define MHZ 14
 
 // Data pin that led data will be written out over
@@ -39,16 +29,10 @@
 
 CRGB leds[NUM_DATA_OUT][NUM_LEDS_PER_DATA_OUT];
 
-// UDP
+// UDP constants
 const uint16_t BUFFERSIZE = NUM_LEDS_TOTAL * 3 + 4; // The +4 is for the header
-uint8_t packetBufferPrimary[BUFFERSIZE];
-
-byte mac[] = {0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED};
-IPAddress ip(10, 0, 0, NET_ID);
-
-unsigned int localPort = 8888; // local port to listen on
-
-// An EthernetUDP instance to let us send and receive packets over UDP
+uint8_t ledBuffer[BUFFERSIZE];
+IPAddress ip(10, 0, 1, NET_ID);
 EthernetUDP Udp;
 
 void setupLEDs()
@@ -67,20 +51,7 @@ void setupUDP()
 
   // Open serial communications and wait for port to open:
   Serial.begin(9600);
-  // while (!Serial)
-  // {
-  //   ; // wait for serial port to connect. Needed for native USB port only
-  // }
 
-  // Check for Ethernet hardware present
-  if (Ethernet.hardwareStatus() == EthernetNoHardware)
-  {
-    Serial.println("Ethernet shield was not found.  Sorry, can't run without hardware. :(");
-    while (true)
-    {
-      delay(1); // do nothing, no point running without Ethernet hardware
-    }
-  }
   if (Ethernet.linkStatus() == LinkOFF)
   {
     Serial.println("Ethernet cable is not connected.");
@@ -116,8 +87,6 @@ void prettyPrint(int packetSize)
   Serial.println(Udp.remotePort());
 }
 
-int count = 0;
-
 void DefaultPattern()
 {
    // Move a single white led 
@@ -143,40 +112,42 @@ void DefaultPattern()
       leds[2][idx] = CRGB::Black;
       leds[3][idx] = CRGB::Black;
       leds[4][idx] = CRGB::Black;
-      digitalWrite(13, LOW);
-      
-
-      
+      digitalWrite(13, LOW); 
    }
 }
 
-void loop()
-
-{
-  // if there's data available, read a packet
+void NetworkPattern() {
   int packetSize = Udp.parsePacket();
   if (packetSize)
   {
     prettyPrint(packetSize);
 
     // read the packet into packetBufffer
-    // memset(packetBufferPrimary, 0, sizeof packetBufferPrimary);
-    Udp.read(packetBufferPrimary, BUFFERSIZE);
-
-    for (uint16_t i = 0; i < packetSize; i++)
+    Udp.read(ledBuffer, BUFFERSIZE);
+    byte header = (byte)ledBuffer[0];
+    for (uint16_t i = 1; i < packetSize; i+=3)
     {
-      // Serial.print((byte)buf[i]);
+      Serial.print(header);
+      leds[header][i    ] = ledBuffer[i    ];
+      leds[header][i + 1] = ledBuffer[i + 1];
+      leds[header][i + 2] = ledBuffer[i + 2];
     }
-    Serial.println(count++);
 
-    // // send a reply to the IP address and port that sent us the packet we received
+    FastLED.show();
+    digitalWrite(13, HIGH);
+
+    // Send Ack
     Udp.beginPacket(Udp.remoteIP(), Udp.remotePort());
     Udp.write((byte)0);
     Udp.endPacket();
+  } else {
+      digitalWrite(13, LOW); 
   }
-  else {
-     DefaultPattern();
-  }
-  
+}
+
+void loop()
+{
+  if(Ethernet.linkStatus() == LinkOFF) DefaultPattern();
+  else NetworkPattern();
 }
 
